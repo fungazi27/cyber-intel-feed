@@ -68,15 +68,18 @@ KEYWORD_FILTER = {
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 def ensure_nltk_data() -> None:
-    try:
-        stopwords.words("english")
-    except LookupError:
-        nltk.download("stopwords")
+    """Download required NLTK resources if they are missing."""
+    resources = [
+        ("corpora/stopwords", "stopwords"),
+        ("tokenizers/punkt", "punkt"),
+        ("tokenizers/punkt_tab", "punkt_tab"),
+    ]
 
-    try:
-        word_tokenize("test sentence")
-    except LookupError:
-        nltk.download("punkt")
+    for resource_path, resource_name in resources:
+        try:
+            nltk.data.find(resource_path)
+        except LookupError:
+            nltk.download(resource_name)
 
 def parse_opml(opml_path: str) -> list[dict[str, str]]:
     tree = ET.parse(opml_path)
