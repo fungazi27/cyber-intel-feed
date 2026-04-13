@@ -165,18 +165,18 @@ export default function App() {
             </div>
 
             <div>
-              <label className="label">Source</label>
-              <div className="chips">
-                {allSources.map((source) => (
-                  <button
-                    key={source}
-                    className={`chip ${selectedSource === source ? "chip-active" : ""}`}
-                    onClick={() => setSelectedSource(source)}
-                  >
-                    {source}
-                  </button>
-                ))}
-              </div>
+                <label className="label">Source</label>
+                <select
+                    className="search-input"
+                    value={selectedSource}
+                    onChange={(e) => setSelectedSource(e.target.value)}
+                >
+                    {allSources.map((source) => (
+                        <option key={source} value={source}>
+                            {source}
+                        </option>
+                    ))}
+                </select>
             </div>
 
             <div>
@@ -220,11 +220,6 @@ export default function App() {
                       {timeAgo(article.published_eastern)}
                     </span>
                   </div>
-
-                  <h2>{article.title}</h2>
-                  <p className="summary">
-                    {article.summary || "No summary available."}
-                  </p>
 
                   <div className="chips">
                     {(article.tags || []).slice(0, 8).map((tag) => (

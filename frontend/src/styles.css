@@ -214,12 +214,6 @@ button {
   line-height: 1.35;
 }
 
-.summary {
-  color: #475569;
-  line-height: 1.6;
-  flex: 1;
-}
-
 .article-footer {
   margin-top: 18px;
   padding-top: 16px;
