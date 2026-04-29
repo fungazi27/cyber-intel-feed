@@ -1,10 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const fallbackArticles = [];
+const ITEMS_PER_PAGE = 10;
 
 function formatDate(dateString) {
   if (!dateString) return "Unknown date";
+
   const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -13,8 +17,12 @@ function formatDate(dateString) {
 
 function timeAgo(dateString) {
   if (!dateString) return "Unknown";
+
   const now = new Date();
   const then = new Date(dateString);
+
+  if (Number.isNaN(then.getTime())) return "Unknown";
+
   const diffMs = now - then;
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffHours / 24);
@@ -24,13 +32,104 @@ function timeAgo(dateString) {
   return `${diffDays}d ago`;
 }
 
+function getFilterLabel(baseLabel, selectedItems) {
+  if (selectedItems.length === 0) return `All ${baseLabel}`;
+  if (selectedItems.length === 1) return selectedItems[0];
+  return `${selectedItems.length} selected`;
+}
+
+function useOutsideClick(ref, handler) {
+  useEffect(() => {
+    function handleClick(event) {
+      if (!ref.current || ref.current.contains(event.target)) return;
+      handler();
+    }
+
+    document.addEventListener("mousedown", handleClick);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, [ref, handler]);
+}
+
+function MultiSelectDropdown({
+  label,
+  options,
+  selectedValues,
+  setSelectedValues,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useOutsideClick(dropdownRef, () => setIsOpen(false));
+
+  function toggleValue(value) {
+    setSelectedValues((prev) =>
+      prev.includes(value)
+        ? prev.filter((item) => item !== value)
+        : [...prev, value]
+    );
+  }
+
+  function clearAll() {
+    setSelectedValues([]);
+  }
+
+  return (
+    <div className="dropdown-wrapper" ref={dropdownRef}>
+      <label className="label">{label}</label>
+
+      <button
+        type="button"
+        className="dropdown-trigger"
+        onClick={() => setIsOpen((prev) => !prev)}
+      >
+        <span>{getFilterLabel(label, selectedValues)}</span>
+        <span className={`dropdown-caret ${isOpen ? "dropdown-caret-open" : ""}`}>
+          ▾
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div className="dropdown-menu">
+          <div className="dropdown-menu-header">
+            <span className="dropdown-menu-title">{label}</span>
+            <button type="button" className="dropdown-clear" onClick={clearAll}>
+              Clear
+            </button>
+          </div>
+
+          <div className="dropdown-options">
+            {options.length === 0 ? (
+              <div className="dropdown-empty">No options available</div>
+            ) : (
+              options.map((option) => (
+                <label key={option} className="checkbox-option">
+                  <input
+                    type="checkbox"
+                    checked={selectedValues.includes(option)}
+                    onChange={() => toggleValue(option)}
+                  />
+                  <span>{option}</span>
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function App() {
   const [articles, setArticles] = useState([]);
   const [search, setSearch] = useState("");
-  const [selectedTag, setSelectedTag] = useState("All");
-  const [selectedSource, setSelectedSource] = useState("All");
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedSources, setSelectedSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const [openTags, setOpenTags] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -38,12 +137,18 @@ export default function App() {
     async function loadArticles() {
       setLoading(true);
       setError("");
+
       try {
-        const response = await fetch("/latest_cyber_news.json", { cache: "no-store" });
+        const response = await fetch("/latest_cyber_news.json", {
+          cache: "no-store",
+        });
+
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
+
         const data = await response.json();
+
         if (!cancelled) {
           setArticles(Array.isArray(data) ? data : fallbackArticles);
         }
@@ -53,11 +158,14 @@ export default function App() {
           setArticles(fallbackArticles);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     loadArticles();
+
     return () => {
       cancelled = true;
     };
@@ -65,17 +173,20 @@ export default function App() {
 
   const allTags = useMemo(() => {
     const tags = new Set();
+
     articles.forEach((article) => {
       (article.tags || []).forEach((tag) => tags.add(tag));
     });
-    return ["All", ...Array.from(tags).sort((a, b) => a.localeCompare(b))];
+
+    return Array.from(tags).sort((a, b) => a.localeCompare(b));
   }, [articles]);
 
   const allSources = useMemo(() => {
     const sources = new Set(
       articles.map((article) => article.feed_title).filter(Boolean)
     );
-    return ["All", ...Array.from(sources).sort((a, b) => a.localeCompare(b))];
+
+    return Array.from(sources).sort((a, b) => a.localeCompare(b));
   }, [articles]);
 
   const filteredArticles = useMemo(() => {
@@ -86,41 +197,56 @@ export default function App() {
         const matchesSearch =
           !query ||
           article.title?.toLowerCase().includes(query) ||
-          article.summary?.toLowerCase().includes(query) ||
           article.feed_title?.toLowerCase().includes(query) ||
           (article.tags || []).some((tag) => tag.toLowerCase().includes(query));
 
-        const matchesTag =
-          selectedTag === "All" || (article.tags || []).includes(selectedTag);
+        const matchesTags =
+          selectedTags.length === 0 ||
+          selectedTags.some((tag) => (article.tags || []).includes(tag));
 
-        const matchesSource =
-          selectedSource === "All" || article.feed_title === selectedSource;
+        const matchesSources =
+          selectedSources.length === 0 ||
+          selectedSources.includes(article.feed_title);
 
-        return matchesSearch && matchesTag && matchesSource;
+        return matchesSearch && matchesTags && matchesSources;
       })
       .sort((a, b) => {
-        const aTime = a.published_eastern ? new Date(a.published_eastern).getTime() : 0;
-        const bTime = b.published_eastern ? new Date(b.published_eastern).getTime() : 0;
+        const aTime = a.published_eastern
+          ? new Date(a.published_eastern).getTime()
+          : 0;
+        const bTime = b.published_eastern
+          ? new Date(b.published_eastern).getTime()
+          : 0;
         return bTime - aTime;
       });
-  }, [articles, search, selectedTag, selectedSource]);
+  }, [articles, search, selectedTags, selectedSources]);
 
-  const stats = useMemo(() => {
-    const total = articles.length;
-    const sources = new Set(articles.map((a) => a.feed_title).filter(Boolean)).size;
-    const today = new Date();
-    const todayCount = articles.filter((article) => {
-      if (!article.published_eastern) return false;
-      const d = new Date(article.published_eastern);
-      return d.toDateString() === today.toDateString();
-    });
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredArticles.length / ITEMS_PER_PAGE)
+  );
 
-    return {
-      total,
-      sources,
-      todayCount: todayCount.length,
-    };
-  }, [articles]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedTags, selectedSources]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const paginatedArticles = useMemo(() => {
+    const startIndex = (page - 1) * ITEMS_PER_PAGE;
+    return filteredArticles.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredArticles, page]);
+
+  function toggleTags(articleId) {
+    setOpenTags((prev) => ({
+      ...prev,
+      [articleId]: !prev[articleId],
+    }));
+  }
 
   return (
     <div className="page-shell">
@@ -130,25 +256,10 @@ export default function App() {
             <div className="eyebrow">Cyber Intel Feed</div>
             <h1>Latest cybersecurity news in one place</h1>
             <p>
-              A local web app powered by your Python RSS aggregation script.
-              Search, filter by source or tags, and review the latest cyber
-              intelligence stories.
+              A live feed powered by your Python RSS aggregation script. Search,
+              filter by source or tag, and review the latest cyber intelligence
+              stories.
             </p>
-          </div>
-
-          <div className="stats-grid">
-            <div className="stat-card">
-              <span>Articles</span>
-              <strong>{stats.total}</strong>
-            </div>
-            <div className="stat-card">
-              <span>Sources</span>
-              <strong>{stats.sources}</strong>
-            </div>
-            <div className="stat-card">
-              <span>Published today</span>
-              <strong>{stats.todayCount}</strong>
-            </div>
           </div>
         </header>
 
@@ -160,39 +271,23 @@ export default function App() {
                 className="search-input"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search titles, summaries, feeds, or tags"
+                placeholder="Search titles, feeds, or tags"
               />
             </div>
 
-            <div>
-                <label className="label">Source</label>
-                <select
-                    className="search-input"
-                    value={selectedSource}
-                    onChange={(e) => setSelectedSource(e.target.value)}
-                >
-                    {allSources.map((source) => (
-                        <option key={source} value={source}>
-                            {source}
-                        </option>
-                    ))}
-                </select>
-            </div>
+            <MultiSelectDropdown
+              label="Sources"
+              options={allSources}
+              selectedValues={selectedSources}
+              setSelectedValues={setSelectedSources}
+            />
 
-            <div>
-              <label className="label">Tag</label>
-              <div className="chips">
-                {allTags.slice(0, 18).map((tag) => (
-                  <button
-                    key={tag}
-                    className={`chip ${selectedTag === tag ? "chip-active" : ""}`}
-                    onClick={() => setSelectedTag(tag)}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <MultiSelectDropdown
+              label="Tags"
+              options={allTags}
+              selectedValues={selectedTags}
+              setSelectedValues={setSelectedTags}
+            />
           </div>
         </section>
 
@@ -204,58 +299,117 @@ export default function App() {
 
             <div className="results-bar">
               <span>
-                Showing <strong>{filteredArticles.length}</strong> articles
+                Showing <strong>{paginatedArticles.length}</strong> of{" "}
+                <strong>{filteredArticles.length}</strong> articles
               </span>
               <span>Refresh by rerunning the Python script</span>
             </div>
 
             <section className="articles-grid">
-              {filteredArticles.map((article) => (
+              {paginatedArticles.map((article) => (
                 <article key={article.id} className="article-card card">
                   <div className="article-top-row">
                     <span className="source-badge">
                       {article.feed_title || "Unknown source"}
                     </span>
+
                     <span className="time-ago">
                       {timeAgo(article.published_eastern)}
                     </span>
                   </div>
 
-                  <div className="chips">
-                    {(article.tags || []).slice(0, 8).map((tag) => (
-                      <button
-                        key={`${article.id}-${tag}`}
-                        className="chip"
-                        onClick={() => setSelectedTag(tag)}
-                      >
-                        #{tag}
-                      </button>
-                    ))}
-                  </div>
+                  <h2>
+                    <a
+                      href={article.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="article-title-link"
+                    >
+                      {article.title}
+                    </a>
+                  </h2>
+
+                  <button
+                    type="button"
+                    className="tags-toggle"
+                    onClick={() => toggleTags(article.id)}
+                  >
+                    {openTags[article.id] ? "Hide tags" : "Click here for tags"}
+                  </button>
+
+                  {openTags[article.id] ? (
+                    <div className="chips">
+                      {(article.tags || []).slice(0, 8).map((tag) => (
+                        <button
+                          key={`${article.id}-${tag}`}
+                          className="chip"
+                          onClick={() =>
+                            setSelectedTags((prev) =>
+                              prev.includes(tag) ? prev : [...prev, tag]
+                            )
+                          }
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
 
                   <div className="article-footer">
                     <span>{formatDate(article.published_eastern)}</span>
-                    <a href={article.link} target="_blank" rel="noreferrer">
-                      Open article
-                    </a>
                   </div>
                 </article>
               ))}
             </section>
 
+            <div className="pagination card">
+              <div className="pagination-text">
+                Page <strong>{page}</strong> of <strong>{totalPages}</strong>
+              </div>
+
+              <div className="pagination-actions">
+                <button
+                  className="chip"
+                  onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={page === 1}
+                >
+                  Previous
+                </button>
+
+                <button
+                  className="chip"
+                  onClick={() =>
+                    setPage((prev) => Math.min(prev + 1, totalPages))
+                  }
+                  disabled={page === totalPages}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
             {filteredArticles.length === 0 ? (
               <div className="empty-state card">
                 <h3>No articles match your filters</h3>
-                <p>Try clearing your search or switching back to all tags and all sources.</p>
+                <p>
+                  Try clearing the search text or removing some selected tags
+                  and sources.
+                </p>
+
                 <div className="chips center-row">
                   <button className="chip" onClick={() => setSearch("")}>
                     Clear search
                   </button>
-                  <button className="chip" onClick={() => setSelectedTag("All")}>
-                    All tags
+
+                  <button className="chip" onClick={() => setSelectedTags([])}>
+                    Clear tags
                   </button>
-                  <button className="chip" onClick={() => setSelectedSource("All")}>
-                    All sources
+
+                  <button
+                    className="chip"
+                    onClick={() => setSelectedSources([])}
+                  >
+                    Clear sources
                   </button>
                 </div>
               </div>
