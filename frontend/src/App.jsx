@@ -298,7 +298,6 @@ export default function App() {
                 Showing <strong>{paginatedArticles.length}</strong> of{" "}
                 <strong>{filteredArticles.length}</strong> articles
               </span>
-              <span>Refresh by rerunning the Python script</span>
             </div>
 
             <section className="articles-grid">
