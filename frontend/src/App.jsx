@@ -255,11 +255,7 @@ export default function App() {
           <div>
             <div className="eyebrow">Cyber Intel Feed</div>
             <h1>Latest cybersecurity news in one place</h1>
-            <p>
-              A live feed powered by your Python RSS aggregation script. Search,
-              filter by source or tag, and review the latest cyber intelligence
-              stories.
-            </p>
+            <div style={{ height: "8px" }} />
           </div>
         </header>
 
